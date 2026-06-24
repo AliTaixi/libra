@@ -1,0 +1,183 @@
+config_version: 9
+log_level: info
+token_usage:
+  enabled: true
+models:
+- name: gemma4-cloud
+  display_name: Gemma 4 31B (云端)
+  use: langchain_ollama:ChatOllama
+  model: gemma4:31b-cloud
+  base_url: http://host.docker.internal:11434
+  num_predict: 32768
+  num_ctx: 128000
+  temperature: 0.7
+  top_k: 40
+  top_p: 0.9
+  repeat_penalty: 1.1
+  supports_thinking: true
+  supports_vision: true
+- name: qwen2-5-coder-7b
+  model: qwen2.5-coder:7b-instruct-q4_K_M
+  display_name: qwen2.5-coder:7b
+  use: langchain_ollama:ChatOllama
+  supports_vision: true
+  api_key: $QWEN2-5-CODER-7B_API_KEY
+  base_url: http://host.docker.internal:11434
+tool_groups:
+- name: web
+- name: file:read
+- name: file:write
+- name: bash
+tools:
+- name: kb_search
+  group: web
+  use: deerflow.knowledge_base.agent_tool:kb_query_tool
+  description: Search the knowledge base for relevant document content.
+- name: ls
+  group: file:read
+  use: deerflow.sandbox.tools:ls_tool
+- name: read_file
+  group: file:read
+  use: deerflow.sandbox.tools:read_file_tool
+- name: glob
+  group: file:read
+  use: deerflow.sandbox.tools:glob_tool
+  max_results: 200
+- name: grep
+  group: file:read
+  use: deerflow.sandbox.tools:grep_tool
+  max_results: 100
+- name: write_file
+  group: file:write
+  use: deerflow.sandbox.tools:write_file_tool
+- name: str_replace
+  group: file:write
+  use: deerflow.sandbox.tools:str_replace_tool
+- name: bash
+  group: bash
+  use: deerflow.sandbox.tools:bash_tool
+tool_search:
+  enabled: false
+loop_detection:
+  enabled: true
+  warn_threshold: 3
+  hard_limit: 5
+  window_size: 20
+  max_tracked_threads: 100
+  tool_freq_warn: 30
+  tool_freq_hard_limit: 50
+  tool_freq_overrides:
+    bash:
+      warn: 150
+      hard_limit: 300
+uploads:
+  max_files: 10
+  max_file_size: 52428800
+  max_total_size: 104857600
+  auto_convert_documents: false
+  pdf_converter: auto
+sandbox:
+  use: deerflow.sandbox.local:LocalSandboxProvider
+  allow_host_bash: true
+  bash_output_max_chars: 20000
+  read_file_output_max_chars: 50000
+  ls_output_max_chars: 20000
+subagents:
+  timeout_seconds: 900
+  custom_agents:
+    chart-code-generation:
+      description: 用 Python 生成统计图表，保存为图片。触发词：生成图表、画图、可视化。
+      system_prompt: '你是一个数据可视化专家。严格按以下步骤执行，不要考虑其他方法：
+
+        1. 打开 `chart-code-generation` skill 的 SKILL.md 查看工作流程 2. 确定图表类型和参数 3. 调用 generate.py
+        输出 PNG 4. 用 Markdown 图片语法引用生成的 PNG
+
+        ⚠️ 禁止使用 Mermaid 生成统计图表（Mermaid 不支持统计图） ⚠️ 必须执行 generate.py 输出 PNG 文件，不要只输出代码
+
+        '
+      skills:
+      - chart-code-generation
+      model: inherit
+      max_turns: 60
+      timeout_seconds: 600
+    diagram-code-generation:
+      description: 用文本描述生成技术图表（流程图、时序图、架构图等），输出 PNG 图片。触发词：画流程图、画架构图。
+      system_prompt: '你是一个技术图表绘制专家。严格按以下步骤执行，不要考虑其他方法：
+
+        1. 打开 `diagram-code-generation` skill 的 SKILL.md 查看工作流程 2. 确定图类型，编写 Mermaid
+        文本 3. 写入 .mmd 文件到 /mnt/user-data/ 4. 调用 render.sh 输出 PNG 5. 用 Markdown 图片语法引用生成的
+        PNG
+
+        ⚠️ 禁止使用 Python、matplotlib、外部 API 等方式生成图表 ⚠️ 不要画过于复杂的架构图，保持简洁清晰 ⚠️ 必须执行 render.sh
+        输出 PNG 文件，不要只输出 Mermaid 代码
+
+        '
+      skills:
+      - diagram-code-generation
+      model: inherit
+      max_turns: 40
+      timeout_seconds: 300
+    md-to-docx-skill:
+      description: 将 Markdown 文档转换为格式化的 Word 文件。触发词：文档导出、转格式、写报告。
+      system_prompt: '你是一个文档格式转换专家。你的职责是：
+
+        - 先用 Markdown 编写完整内容（支持标题、表格、列表、代码块、图片引用） - 然后调用转换脚本将 Markdown 转换为格式化的 .docx
+        文件 - 图片路径需指定为沙箱内的实际路径
+
+        使用 `md-to-docx-skill` skill 完成工作。
+
+        ⚠️ 禁止手写 python-docx 代码
+
+        '
+      skills:
+      - md-to-docx-skill
+      model: inherit
+      max_turns: 80
+      timeout_seconds: 600
+skills:
+  container_path: /mnt/skills
+title:
+  enabled: true
+  max_words: 6
+  max_chars: 60
+  model_name: null
+summarization:
+  enabled: true
+  model_name: null
+  trigger:
+  - type: tokens
+    value: 64000
+  keep:
+    type: messages
+    value: 20
+  trim_tokens_to_summarize: 64000
+  summary_prompt: null
+  preserve_recent_skill_count: 5
+  preserve_recent_skill_tokens: 25000
+  preserve_recent_skill_tokens_per_skill: 5000
+  skill_file_read_tool_names:
+  - read_file
+  - read
+  - view
+  - cat
+memory:
+  enabled: true
+  storage_path: memory.json
+  debounce_seconds: 30
+  model_name: null
+  max_facts: 200
+  fact_confidence_threshold: 0.7
+  injection_enabled: true
+  max_injection_tokens: 4000
+agents_api:
+  enabled: true
+skill_evolution:
+  enabled: false
+  moderation_model_name: null
+database:
+  backend: postgres
+  postgres_url: $DATABASE_URL
+run_events:
+  backend: db
+  max_trace_content: 10240
+  track_token_usage: true

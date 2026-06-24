@@ -1,0 +1,240 @@
+# ══════════════════════════════════════════════════════════════════════════
+# config_backups.yaml — DeerFlow 服务器优化配置
+# 目标硬件: AMD EPYC 9354 × 2 / 256GB DDR5 / 8× RTX 5090
+# 推理引擎: Ollama + OLLAMA_FLASH_ATTENTION
+# 模型: gemma4:31b BF16
+# ══════════════════════════════════════════════════════════════════════════
+
+config_version: 9
+log_level: info
+token_usage:
+  enabled: true
+
+# ── 模型配置 ──────────────────────────────────────────────────────────────
+# 模型通过前端"设置→模型"界面增删改查，实时生效，无需重启。
+models:
+- name: gemma4-local
+  display_name: Gemma 4 31B (Ollama)
+  use: langchain_ollama:ChatOllama
+  model: gemma4:31b
+  base_url: http://host.docker.internal:11434
+  num_predict: 32768            # 扩大输出上限，thinking + 正文一次出
+  num_ctx: 128000               # 充分发挥 256K 上下文能力，KB 内容不被截断
+  temperature: 0.7
+  top_k: 40                     # 适度约束采样，写作质量更稳定
+  top_p: 0.9
+  repeat_penalty: 1.1           # 轻微惩罚重复，长文本不车轱辘话
+  supports_thinking: true
+  supports_vision: true
+
+# ── 工具配置 ──────────────────────────────────────────────────────────────
+tool_groups:
+- name: web
+- name: file:read
+- name: file:write
+- name: bash
+
+tools:
+- name: kb_search
+  group: web
+  use: deerflow.knowledge_base.agent_tool:kb_query_tool
+  description: Search the knowledge base for relevant document content.
+- name: ls
+  group: file:read
+  use: deerflow.sandbox.tools:ls_tool
+- name: read_file
+  group: file:read
+  use: deerflow.sandbox.tools:read_file_tool
+- name: glob
+  group: file:read
+  use: deerflow.sandbox.tools:glob_tool
+  max_results: 200
+- name: grep
+  group: file:read
+  use: deerflow.sandbox.tools:grep_tool
+  max_results: 100
+- name: write_file
+  group: file:write
+  use: deerflow.sandbox.tools:write_file_tool
+- name: str_replace
+  group: file:write
+  use: deerflow.sandbox.tools:str_replace_tool
+- name: bash
+  group: bash
+  use: deerflow.sandbox.tools:bash_tool
+
+tool_search:
+  enabled: false
+
+# ── 对话循环检测 ──────────────────────────────────────────────────────────
+loop_detection:
+  enabled: true
+  warn_threshold: 3
+  hard_limit: 5
+  window_size: 20
+  max_tracked_threads: 100
+  tool_freq_warn: 30
+  tool_freq_hard_limit: 50
+  tool_freq_overrides:
+    bash:
+      warn: 150
+      hard_limit: 300
+
+# ── 文件上传 ──────────────────────────────────────────────────────────────
+uploads:
+  max_files: 10
+  max_file_size: 52428800
+  max_total_size: 104857600
+  auto_convert_documents: false
+  pdf_converter: auto
+
+# ── 沙箱 ──────────────────────────────────────────────────────────────────
+sandbox:
+  use: deerflow.sandbox.local:LocalSandboxProvider
+  allow_host_bash: true
+  bash_output_max_chars: 20000
+  read_file_output_max_chars: 50000
+  ls_output_max_chars: 20000
+
+# ── 子智能体 ──────────────────────────────────────────────────────────────
+subagents:
+  timeout_seconds: 900
+  custom_agents:
+    chart-code-generation:
+      description: 用 Python 生成统计图表，保存为图片。触发词：生成图表、画图、可视化。
+      system_prompt: '你是一个数据可视化专家。严格按以下步骤执行，不要考虑其他方法：
+
+        1. 打开 `chart-code-generation` skill 的 SKILL.md 查看工作流程
+        2. 确定图表类型和参数
+        3. 调用 generate.py 输出 PNG
+        4. 用 Markdown 图片语法引用生成的 PNG
+
+        ⚠️ 禁止使用 Mermaid 生成统计图表（Mermaid 不支持统计图）
+        ⚠️ 必须执行 generate.py 输出 PNG 文件，不要只输出代码
+
+        '
+      skills:
+      - chart-code-generation
+      model: inherit
+      max_turns: 60
+      timeout_seconds: 600
+    diagram-code-generation:
+      description: 用文本描述生成技术图表（流程图、时序图、架构图等），输出 PNG 图片。触发词：画流程图、画架构图。
+      system_prompt: '你是一个技术图表绘制专家。严格按以下步骤执行，不要考虑其他方法：
+
+        1. 打开 `diagram-code-generation` skill 的 SKILL.md 查看工作流程
+        2. 确定图类型，编写 Mermaid 文本
+        3. 写入 .mmd 文件到 /mnt/user-data/
+        4. 调用 render.sh 输出 PNG
+        5. 用 Markdown 图片语法引用生成的 PNG
+
+        ⚠️ 禁止使用 Python、matplotlib、外部 API 等方式生成图表
+        ⚠️ 不要画过于复杂的架构图，保持简洁清晰
+        ⚠️ 必须执行 render.sh 输出 PNG 文件，不要只输出 Mermaid 代码
+
+        '
+      skills:
+      - diagram-code-generation
+      model: inherit
+      max_turns: 40
+      timeout_seconds: 300
+    md-to-docx-skill:
+      description: 将 Markdown 文档转换为格式化的 Word 文件。触发词：文档导出、转格式、写报告。
+      system_prompt: '你是一个文档格式转换专家。你的职责是：
+
+        - 先用 Markdown 编写完整内容（支持标题、表格、列表、代码块、图片引用）
+        - 然后调用转换脚本将 Markdown 转换为格式化的 .docx 文件
+        - 图片路径需指定为沙箱内的实际路径
+
+        使用 `md-to-docx-skill` skill 完成工作。
+
+        ⚠️ 禁止手写 python-docx 代码
+
+        '
+      skills:
+      - md-to-docx-skill
+      model: inherit
+      max_turns: 80
+      timeout_seconds: 600
+
+# ── 技能系统 ──────────────────────────────────────────────────────────────
+skills:
+  container_path: /mnt/skills
+
+# ── 标题生成 ──────────────────────────────────────────────────────────────
+title:
+  enabled: true
+  max_words: 6
+  max_chars: 60
+  model_name: null
+
+# ── 摘要（上下文压缩） ────────────────────────────────────────────────────
+# 256K 上下文 + vLLM 高效 KV cache，可以调高触发阈值
+summarization:
+  enabled: true
+  model_name: null
+  trigger:
+  - type: tokens
+    value: 64000          # 从 15564 提到 64000，减少不必要的摘要触发
+  keep:
+    type: messages
+    value: 20             # 多保留几轮对话
+  trim_tokens_to_summarize: 64000
+  summary_prompt: null
+  preserve_recent_skill_count: 5
+  preserve_recent_skill_tokens: 25000
+  preserve_recent_skill_tokens_per_skill: 5000
+  skill_file_read_tool_names:
+  - read_file
+  - read
+  - view
+  - cat
+
+# ── 记忆系统 ──────────────────────────────────────────────────────────────
+memory:
+  enabled: true            # 开启记忆（服务器资源充足）
+  storage_path: memory.json
+  debounce_seconds: 30
+  model_name: null
+  max_facts: 200
+  fact_confidence_threshold: 0.7
+  injection_enabled: true
+  max_injection_tokens: 4000
+
+# ── 智能体 API ────────────────────────────────────────────────────────────
+agents_api:
+  enabled: true
+
+# ── 技能进化 ──────────────────────────────────────────────────────────────
+skill_evolution:
+  enabled: false
+  moderation_model_name: null
+
+# ── 数据库 ────────────────────────────────────────────────────────────────
+database:
+  backend: postgres
+  postgres_url: $DATABASE_URL
+
+# ── 事件追踪 ──────────────────────────────────────────────────────────────
+run_events:
+  backend: db
+  max_trace_content: 10240
+  track_token_usage: true
+
+# ── 知识库 ────────────────────────────────────────────────────────────────
+# 优化参数：充分利用 vLLM 的快速推理能力
+knowledge_base:
+  # KB 解析用的模型（与写作主模型不同，可以小一些）
+  model: gemma4-local
+  pageindex:
+    max_pages_per_node: 10
+    max_tokens_per_node: 20000
+    if_add_node_summary: true     # 保留节点摘要（KB 匹配用）
+    if_add_node_id: true
+    if_add_doc_description: true  # 保留文档描述（文档级匹配用）
+    min_token_threshold: 5000
+  # 写作时 KB 预取的参数（在 Python 层控制，LLM 没有工具权限）
+  writing:
+    top_k_docs: 1                 # 每次写作只选 1 篇主文档
+    top_k_nodes: 1                # 每章只取 1 个最佳节点
+    min_confidence: 0.5           # 匹配置信度低于此值时跳过 KB
