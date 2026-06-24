@@ -71,10 +71,10 @@ docker compose -f docker-compose.db.yml -p libra up -d
 | frontend       | Dockerfile 构建 | `build: frontend.Dockerfile`                      |                                                                             |
 | whisper        | Dockerfile 构建 | `build: whisper.Dockerfile`                       |                                                                             |
 | mineru         | Dockerfile 构建 | `build: mineru.Dockerfile`                        | 服务器上已有 `mineru`镜像，可修改 yaml 中 build 配置，直接用 image 名    |
-| mermaid-server | Dockerfile 构建 | `build: mermaid.Dockerfile`                       | 服务器上已有 mermaid 镜像，可修改删除 yaml 中 build 配置，直接用 image 名  |
+| mermaid-server | Dockerfile 构建 | `build: mermaid.Dockerfile`                       | 服务器上已有 mermaid 镜像，可修改 yaml 中 build 配置，直接用 image 名  |
 | nginx          | 公共镜像        | `image: nginx:alpine`                             |                                                                             |
 | drawio         | 公共镜像        | `image: jgraph/drawio:latest`                     |                                                                             |
-| postgres       | 公共镜像        | `image: postgres:18`（在docker-compose.db.yml中） | 如需使用服务器上已有版本，手动把 yaml 中的 tag 改为对应版本号即可。功能兼容 |
+| postgresql       | 公共镜像        | `image: postgres:18`（在docker-compose.db.yml中） | 如需使用服务器上已有版本，手动把 yaml 中的 tag 改为对应版本号即可。功能兼容 |
 
 > 公共镜像默认 tag 是选定的版本号（如 `postgres:18`），服务器上只有旧版本时 Docker 不会自动使用它，会重新拉取指定 tag。**想用本地旧版本 → 手动改 yaml 里的 tag**。
 
